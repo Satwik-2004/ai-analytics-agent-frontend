@@ -43,6 +43,7 @@ interface AIResponse {
   raw_data: any[]
   insight: string | null
   state?: Record<string, any>
+  suggested_actions?: string[] // NEW: Added suggested actions
 }
 
 interface Message {
@@ -290,56 +291,83 @@ export default function ChatDashboard() {
   const hasActiveFilters = activeFilterChips.length > 0
 
   // --- RENDERERS ---
-  const renderChart = (data: any[]) => {
-    if (!data || data.length === 0) return null
-    const keys = Object.keys(data[0])
-    if (keys.length < 2)
-      return (
-        <p className='text-sm text-slate-500 p-4'>
-          Not enough data to visualize.
-        </p>
-      )
-    const xKey = keys[0]
-    const yKey = keys[1]
+const renderChart = (data: any[]) => {
+  if (!data || data.length === 0) return null
+  const keys = Object.keys(data[0])
+  if (keys.length < 2)
     return (
-      <div className='h-64 w-full mt-3 bg-white p-4 rounded-xl border border-slate-200'>
-        <ResponsiveContainer width='100%' height='100%'>
-          <BarChart
-            data={data}
-            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-          >
-            <CartesianGrid
-              strokeDasharray='3 3'
-              vertical={false}
-              stroke='#f1f5f9'
-            />
-            <XAxis
-              dataKey={xKey}
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-            <RechartsTooltip
-              cursor={{ fill: '#f8fafc' }}
-              contentStyle={{
-                borderRadius: '10px',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.08)',
-                fontSize: 13,
-              }}
-            />
-            <Bar
-              dataKey={yKey}
-              fill='#3b82f6'
-              radius={[5, 5, 0, 0]}
-              barSize={36}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      <p className='text-sm text-slate-500 p-4'>
+        Not enough data to visualize.
+      </p>
     )
-  }
+  const xKey = keys[0]
+  const yKey = keys[1]
+
+  return (
+    <div
+      className='w-full mt-3 bg-white p-4 rounded-xl border border-slate-200'
+      style={{ height: '320px' }}
+    >
+      <ResponsiveContainer width='100%' height='100%'>
+        <BarChart
+          data={data}
+          margin={{ top: 10, right: 10, left: -20, bottom: 35 }}
+        >
+          <CartesianGrid
+            strokeDasharray='3 3'
+            vertical={false}
+            stroke='#f1f5f9'
+          />
+          <XAxis
+            dataKey={xKey}
+            tickLine={false}
+            axisLine={false}
+            angle={-40}
+            textAnchor='end'
+            interval={0}
+            height={40}
+            tick={(props) => {
+              const { x, y, payload } = props
+              const yNum = Number(y);
+              const label =
+                payload.value.length > 14
+                  ? `${payload.value.substring(0, 14)}...`
+                  : payload.value
+              return (
+                <text
+                  x={x}
+                  y={yNum + 6}
+                  textAnchor='end'
+                  fill='#94a3b8'
+                  fontSize={10}
+                  transform={`rotate(-40, ${x}, ${yNum + 6})`}
+                >
+                  {label}
+                </text>
+              )
+            }}
+          />
+          <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+          <RechartsTooltip
+            cursor={{ fill: '#f8fafc' }}
+            contentStyle={{
+              borderRadius: '10px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.08)',
+              fontSize: 13,
+            }}
+          />
+          <Bar
+            dataKey={yKey}
+            fill='#3b82f6'
+            radius={[5, 5, 0, 0]}
+            barSize={36}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
 
   const renderTable = (data: any[]) => {
     if (!data || data.length === 0) return null
@@ -380,7 +408,7 @@ export default function ChatDashboard() {
                   {headers.map((h, j) => (
                     <TableCell
                       key={j}
-                      className='whitespace-nowrap max-w-[200px] truncate text-slate-600 text-[13px] py-2.5'
+                      className='whitespace-nowrap max-w-50 truncate text-slate-600 text-[13px] py-2.5'
                     >
                       {row[h] !== null && row[h] !== '' ? (
                         String(row[h])
@@ -474,7 +502,7 @@ export default function ChatDashboard() {
           )}
 
           {/* Messages */}
-          {messages.map((msg) => (
+          {messages.map((msg, index) => (
             <div
               key={msg.id}
               className={`flex gap-3 animate-in fade-in duration-300 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
@@ -507,27 +535,48 @@ export default function ChatDashboard() {
                   {msg.role === 'ai' && <CopyButton text={msg.content} />}
                 </div>
 
+                {/* NEW: Suggested Actions (Quick Reply Buttons) */}
+                {/* We only render these if it's an AI message, it has buttons, AND it's the very last message in the chat */}
+                {msg.role === 'ai' &&
+                  msg.data?.suggested_actions &&
+                  msg.data.suggested_actions.length > 0 &&
+                  index === messages.length - 1 && (
+                    <div className='flex flex-wrap gap-2 mt-1 mb-2'>
+                      {msg.data.suggested_actions.map((action, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleSend(action)}
+                          className='text-[13px] px-3.5 py-1.5 bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-full transition-all shadow-sm font-semibold active:scale-95 flex items-center gap-1.5'
+                        >
+                          {action}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                 {/* Data results */}
                 {msg.data?.raw_data && msg.data.raw_data.length > 0 && (
-                  <div className='w-full'>
-                    {msg.data.state?.intent === 'summary' && (
-                      <div className='flex justify-end mb-2'>
-                        <button
-                          onClick={() => toggleChart(msg.id)}
-                          className='flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg shadow-sm hover:bg-slate-50 hover:text-blue-600 transition-all'
-                        >
-                          {msg.showChart ? (
-                            <>
-                              <TableIcon size={13} /> Show Table
-                            </>
-                          ) : (
-                            <>
-                              <BarChart2 size={13} /> Visualize
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
+                  <div className='w-full mt-2'>
+                    {/* ONLY show chart toggle if it's a summary AND under 50 rows */}
+                    {msg.data.state?.intent === 'summary' &&
+                      msg.data.raw_data.length <= 50 && (
+                        <div className='flex justify-end mb-2'>
+                          <button
+                            onClick={() => toggleChart(msg.id)}
+                            className='flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg shadow-sm hover:bg-slate-50 hover:text-blue-600 transition-all'
+                          >
+                            {msg.showChart ? (
+                              <>
+                                <TableIcon size={13} /> Show Table
+                              </>
+                            ) : (
+                              <>
+                                <BarChart2 size={13} /> Visualize
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
                     {msg.showChart
                       ? renderChart(msg.data.raw_data)
                       : renderTable(msg.data.raw_data)}
