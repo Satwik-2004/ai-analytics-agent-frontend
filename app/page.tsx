@@ -16,6 +16,7 @@ import {
   Info,
   Trash2,
   Sparkles,
+  Download, // NEW: Added Download Icon
 } from 'lucide-react'
 import {
   Table,
@@ -43,7 +44,7 @@ interface AIResponse {
   raw_data: any[]
   insight: string | null
   state?: Record<string, any>
-  suggested_actions?: string[] // NEW: Added suggested actions
+  suggested_actions?: string[]
 }
 
 interface Message {
@@ -54,7 +55,42 @@ interface Message {
   showChart?: boolean
 }
 
-// --- CHAT INPUT (isolated to prevent re-render lag) ---
+// --- CSV EXPORT UTILITY (NEW) ---
+const downloadCSV = (data: any[], filename = 'export.csv') => {
+  if (!data || data.length === 0) return
+
+  // Get Headers
+  const headers = Object.keys(data[0])
+
+  // Convert rows to CSV string, escaping quotes and commas
+  const csvRows = data.map((row) =>
+    headers
+      .map((fieldName) => {
+        const val =
+          row[fieldName] === null || row[fieldName] === undefined
+            ? ''
+            : String(row[fieldName])
+        // Escape quotes and wrap in quotes if there's a comma
+        return `"${val.replace(/"/g, '""')}"`
+      })
+      .join(','),
+  )
+
+  const csvString = [headers.join(','), ...csvRows].join('\r\n')
+
+  // Trigger browser download
+  const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  link.setAttribute('href', url)
+  link.setAttribute('download', filename)
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+// --- CHAT INPUT ---
 const ChatInput = ({ onSend, isLoading, searchState }: any) => {
   const [text, setText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -102,7 +138,7 @@ const ChatInput = ({ onSend, isLoading, searchState }: any) => {
   )
 }
 
-// --- COPY BUTTON with feedback ---
+// --- COPY BUTTON ---
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
   const copy = () => {
@@ -233,7 +269,6 @@ export default function ChatDashboard() {
     setSearchState(null)
   }
 
-  // Active filter chips to show
   const activeFilterChips = searchState
     ? [
         searchState.domain === 'ppm_tickets'
@@ -291,84 +326,108 @@ export default function ChatDashboard() {
   const hasActiveFilters = activeFilterChips.length > 0
 
   // --- RENDERERS ---
-const renderChart = (data: any[]) => {
-  if (!data || data.length === 0) return null
-  const keys = Object.keys(data[0])
-  if (keys.length < 2)
+  const renderChart = (data: any[]) => {
+    if (!data || data.length === 0) return null
+    const keys = Object.keys(data[0])
+    if (keys.length < 2)
+      return (
+        <p className='text-sm text-slate-500 p-4'>
+          Not enough data to visualize.
+        </p>
+      )
+
+    const xKey = keys[0]
+    const yKey = keys[1]
+
+    // Dynamic width calculation so vertical bars never get squished!
+    // Ensures a minimum width of 100%, but grows if there's lots of data.
+    const chartWidth = Math.max(100, data.length * 50)
+
     return (
-      <p className='text-sm text-slate-500 p-4'>
-        Not enough data to visualize.
-      </p>
-    )
-  const xKey = keys[0]
-  const yKey = keys[1]
+      <div className='w-full mt-3 bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col shadow-sm'>
+        <div className='bg-slate-50 border-b border-slate-100 px-4 py-2.5 flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide'>
+          <BarChart2 size={13} />
+          {data.length} Items Rendered
+        </div>
 
-  return (
-    <div
-      className='w-full mt-3 bg-white p-4 rounded-xl border border-slate-200'
-      style={{ height: '320px' }}
-    >
-      <ResponsiveContainer width='100%' height='100%'>
-        <BarChart
-          data={data}
-          margin={{ top: 10, right: 10, left: -20, bottom: 35 }}
+        {/* Horizontal Scrollable Container */}
+        <div
+          className='p-4 overflow-x-auto custom-scrollbar'
+          style={{ height: '380px' }}
         >
-          <CartesianGrid
-            strokeDasharray='3 3'
-            vertical={false}
-            stroke='#f1f5f9'
-          />
-          <XAxis
-            dataKey={xKey}
-            tickLine={false}
-            axisLine={false}
-            angle={-40}
-            textAnchor='end'
-            interval={0}
-            height={40}
-            tick={(props) => {
-              const { x, y, payload } = props
-              const yNum = Number(y);
-              const label =
-                payload.value.length > 14
-                  ? `${payload.value.substring(0, 14)}...`
-                  : payload.value
-              return (
-                <text
-                  x={x}
-                  y={yNum + 6}
-                  textAnchor='end'
-                  fill='#94a3b8'
-                  fontSize={10}
-                  transform={`rotate(-40, ${x}, ${yNum + 6})`}
-                >
-                  {label}
-                </text>
-              )
+          {/* This inner div forces the chart to be wide enough to fit all bars cleanly */}
+          <div
+            style={{
+              minWidth: `${chartWidth}px`,
+              width: '100%',
+              height: '100%',
             }}
-          />
-          <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-          <RechartsTooltip
-            cursor={{ fill: '#f8fafc' }}
-            contentStyle={{
-              borderRadius: '10px',
-              border: '1px solid #e2e8f0',
-              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.08)',
-              fontSize: 13,
-            }}
-          />
-          <Bar
-            dataKey={yKey}
-            fill='#3b82f6'
-            radius={[5, 5, 0, 0]}
-            barSize={36}
-          />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
+          >
+            <ResponsiveContainer width='100%' height='100%'>
+              <BarChart
+                data={data}
+                margin={{ top: 10, right: 10, left: -20, bottom: 45 }}
+              >
+                <CartesianGrid
+                  strokeDasharray='3 3'
+                  vertical={false}
+                  stroke='#f1f5f9'
+                />
+                <XAxis
+                  dataKey={xKey}
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                  height={50}
+                  tick={(props) => {
+                    const { x, y, payload } = props
+                    const yNum = Number(y)
+                    const label =
+                      payload.value.length > 14
+                        ? `${payload.value.substring(0, 14)}...`
+                        : payload.value
+                    return (
+                      <text
+                        x={x}
+                        y={yNum + 10}
+                        textAnchor='end'
+                        fill='#94a3b8'
+                        fontSize={11}
+                        // Rotates the text nicely like your original chart!
+                        transform={`rotate(-40, ${x}, ${yNum + 10})`}
+                      >
+                        {label}
+                      </text>
+                    )
+                  }}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <RechartsTooltip
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.08)',
+                    fontSize: 13,
+                  }}
+                />
+                <Bar
+                  dataKey={yKey}
+                  fill='#3b82f6'
+                  radius={[5, 5, 0, 0]} // Restores the top rounded corners
+                  barSize={36}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    )
+  }
   const renderTable = (data: any[]) => {
     if (!data || data.length === 0) return null
     if (data.length === 1 && Object.keys(data[0]).length === 1) {
@@ -385,7 +444,7 @@ const renderChart = (data: any[]) => {
           <LayoutList size={13} />
           {data.length} rows
         </div>
-        <div className='overflow-x-auto max-h-80'>
+        <div className='overflow-x-auto max-h-112.5'>
           <Table>
             <TableHeader className='bg-slate-50/80 sticky top-0 z-10'>
               <TableRow>
@@ -428,9 +487,9 @@ const renderChart = (data: any[]) => {
 
   const SAMPLE_QUERIES = [
     'Give me a breakdown of corporate tickets by company',
-    'Show me PPM ticket status across companies last month',
-    'Total closed tickets in the last 30 days',
-    'PPM tickets for HVAC services in Mumbai',
+    'Show me PPM ticket status across companies in jan 2026',
+    'Total closed tickets in the dec 2025',
+    'PPM tickets of Banglore in 2025',
   ]
 
   return (
@@ -443,7 +502,7 @@ const renderChart = (data: any[]) => {
           </div>
           <div>
             <h1 className='text-[15px] font-bold text-slate-800 leading-tight tracking-tight'>
-              Data Analytics AI
+              TechxAI
             </h1>
             <p className='text-[11px] text-slate-400 font-medium'>
               Enterprise Search Engine
@@ -469,9 +528,9 @@ const renderChart = (data: any[]) => {
         </div>
       </header>
 
-      {/* CHAT AREA — scrollable, padded so content never hides under footer */}
+      {/* CHAT AREA */}
       <main className='flex-1 overflow-y-auto'>
-        <div className='max-w-4xl mx-auto px-4 py-6 space-y-6'>
+        <div className='max-w-5xl mx-auto px-4 py-6 space-y-6'>
           {/* Empty state */}
           {messages.length === 0 && (
             <div className='mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500'>
@@ -487,7 +546,7 @@ const renderChart = (data: any[]) => {
                   filter, visualize — all in plain English.
                 </p>
               </div>
-              <div className='grid grid-cols-1 sm:grid-cols-2 gap-2.5'>
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-3xl mx-auto'>
                 {SAMPLE_QUERIES.map((q, i) => (
                   <button
                     key={i}
@@ -518,16 +577,21 @@ const renderChart = (data: any[]) => {
                 {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
               </div>
 
-              {/* Bubble + data */}
+              {/* Bubble + data - REBUILT WIDTH LOGIC HERE */}
               <div
-                className={`flex flex-col gap-2 min-w-0 max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                className={`flex flex-col gap-2 min-w-0 ${
+                  msg.role === 'user'
+                    ? 'items-end max-w-[85%]'
+                    : 'items-start w-full max-w-[95%]'
+                }`}
               >
+                {/* Text String Bubble */}
                 <div className='flex items-start gap-1.5 group w-full'>
                   <div
-                    className={`px-4 py-3 text-[14px] leading-relaxed rounded-2xl shadow-sm ${
+                    className={`px-4 py-3 text-[14px] leading-relaxed rounded-2xl shadow-sm inline-block w-fit ${
                       msg.role === 'user'
                         ? 'bg-blue-600 text-white rounded-tr-sm'
-                        : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm'
+                        : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm max-w-[85%]'
                     }`}
                   >
                     {msg.content}
@@ -535,8 +599,7 @@ const renderChart = (data: any[]) => {
                   {msg.role === 'ai' && <CopyButton text={msg.content} />}
                 </div>
 
-                {/* NEW: Suggested Actions (Quick Reply Buttons) */}
-                {/* We only render these if it's an AI message, it has buttons, AND it's the very last message in the chat */}
+                {/* Suggested Actions */}
                 {msg.role === 'ai' &&
                   msg.data?.suggested_actions &&
                   msg.data.suggested_actions.length > 0 &&
@@ -557,10 +620,24 @@ const renderChart = (data: any[]) => {
                 {/* Data results */}
                 {msg.data?.raw_data && msg.data.raw_data.length > 0 && (
                   <div className='w-full mt-2'>
-                    {/* ONLY show chart toggle if it's a summary AND under 50 rows */}
-                    {msg.data.state?.intent === 'summary' &&
-                      msg.data.raw_data.length <= 50 && (
-                        <div className='flex justify-end mb-2'>
+                    {/* NEW EXPORT AND TOGGLE BUTTON ROW */}
+                    <div className='flex justify-end gap-2 mb-2'>
+                      {/* EXPORT TO EXCEL/CSV BUTTON */}
+                      <button
+                        onClick={() =>
+                          downloadCSV(
+                            msg.data!.raw_data,
+                            `techxai-export-${Date.now()}.csv`,
+                          )
+                        }
+                        className='flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:border-green-300 text-[12px] font-semibold rounded-lg shadow-sm hover:bg-green-50 hover:text-green-700 transition-all'
+                      >
+                        <Download size={13} /> Export CSV
+                      </button>
+
+                      {/* CHART/TABLE TOGGLE (Only if summary and < 50 rows) */}
+                      {msg.data.state?.intent === 'summary' &&
+                        msg.data.raw_data.length <= 50 && (
                           <button
                             onClick={() => toggleChart(msg.id)}
                             className='flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg shadow-sm hover:bg-slate-50 hover:text-blue-600 transition-all'
@@ -575,8 +652,10 @@ const renderChart = (data: any[]) => {
                               </>
                             )}
                           </button>
-                        </div>
-                      )}
+                        )}
+                    </div>
+
+                    {/* Render Content */}
                     {msg.showChart
                       ? renderChart(msg.data.raw_data)
                       : renderTable(msg.data.raw_data)}
@@ -592,7 +671,7 @@ const renderChart = (data: any[]) => {
               <div className='w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-400 shadow-sm flex items-center justify-center shrink-0'>
                 <Bot size={16} />
               </div>
-              <div className='px-4 py-3 rounded-2xl rounded-tl-sm bg-white border border-slate-200 text-slate-400 shadow-sm flex items-center gap-2 text-[13px]'>
+              <div className='px-4 py-3 rounded-2xl w-fit rounded-tl-sm bg-white border border-slate-200 text-slate-400 shadow-sm flex items-center gap-2 text-[13px]'>
                 <span className='flex gap-1 items-center'>
                   <span
                     className='w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce'
@@ -612,15 +691,13 @@ const renderChart = (data: any[]) => {
             </div>
           )}
 
-          {/* Scroll anchor — extra space so last message isn't hidden by footer */}
           <div ref={messagesEndRef} className='h-4' />
         </div>
       </main>
 
-      {/* FOOTER — sticky at bottom, part of flex layout (NOT fixed) */}
+      {/* FOOTER */}
       <footer className='shrink-0 bg-white border-t border-slate-200 px-4 py-3.5'>
-        <div className='max-w-4xl mx-auto flex flex-col gap-2.5'>
-          {/* Filter chips */}
+        <div className='max-w-5xl mx-auto flex flex-col gap-2.5'>
           {hasActiveFilters && (
             <div className='flex flex-wrap items-center gap-1.5'>
               <span className='flex items-center gap-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-0.5'>
@@ -681,7 +758,7 @@ const renderChart = (data: any[]) => {
             <div className='p-6 overflow-y-auto max-h-[65vh] text-slate-600 space-y-5 text-[14px]'>
               <section>
                 <h4 className='font-bold text-slate-800 mb-2'>
-                  Available Databases
+                  Available Data
                 </h4>
                 <div className='grid grid-cols-2 gap-3'>
                   <div className='p-3.5 rounded-xl bg-blue-50 border border-blue-100'>
@@ -689,7 +766,7 @@ const renderChart = (data: any[]) => {
                       Corporate Tickets
                     </strong>
                     <span className='text-slate-500 text-[12px]'>
-                      General reactive maintenance. Default domain.
+                      AMC, R&M, Suplly and all available. Default domain.
                     </span>
                   </div>
                   <div className='p-3.5 rounded-xl bg-violet-50 border border-violet-100'>
