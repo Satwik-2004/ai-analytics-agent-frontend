@@ -16,7 +16,10 @@ import {
   Info,
   Trash2,
   Sparkles,
-  Download, // NEW: Added Download Icon
+  Download,
+  ChevronRight,
+  Zap,
+  TrendingUp,
 } from 'lucide-react'
 import {
   Table,
@@ -29,6 +32,12 @@ import {
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
   XAxis,
   YAxis,
   Tooltip as RechartsTooltip,
@@ -36,7 +45,6 @@ import {
   CartesianGrid,
 } from 'recharts'
 
-// --- TYPES ---
 interface AIResponse {
   status: string
   summary: string
@@ -55,146 +63,25 @@ interface Message {
   showChart?: boolean
 }
 
-// --- CSV EXPORT UTILITY (NEW) ---
 const downloadCSV = (data: any[], filename = 'export.csv') => {
   if (!data || data.length === 0) return
-
-  // Get Headers
   const headers = Object.keys(data[0])
-
-  // Convert rows to CSV string, escaping quotes and commas
   const csvRows = data.map((row) =>
     headers
-      .map((fieldName) => {
-        const val =
-          row[fieldName] === null || row[fieldName] === undefined
-            ? ''
-            : String(row[fieldName])
-        // Escape quotes and wrap in quotes if there's a comma
-        return `"${val.replace(/"/g, '""')}"`
-      })
+      .map((f) => `"${(row[f] ?? '').toString().replace(/"/g, '""')}"`)
       .join(','),
   )
-
-  const csvString = [headers.join(','), ...csvRows].join('\r\n')
-
-  // Trigger browser download
-  const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' })
+  const csv = [headers.join(','), ...csvRows].join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
-  const url = URL.createObjectURL(blob)
-  link.setAttribute('href', url)
-  link.setAttribute('download', filename)
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
   link.style.visibility = 'hidden'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
 }
 
-// --- CHAT INPUT ---
-const ChatInput = ({ onSend, isLoading, searchState }: any) => {
-  const [text, setText] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const hasActiveFilters =
-    searchState &&
-    Object.values(searchState).some(
-      (v) => v !== null && v !== 'corporate_tickets' && v !== 'detail',
-    )
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (text.trim() && !isLoading) {
-      onSend(text)
-      setText('')
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className='relative flex items-center'>
-      <input
-        ref={inputRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        disabled={isLoading}
-        placeholder={
-          hasActiveFilters
-            ? 'Search within current filters...'
-            : 'Ask anything about your tickets...'
-        }
-        className='w-full bg-white border border-slate-200 rounded-2xl pl-5 pr-14 py-4 text-slate-800 text-[15px] shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-slate-400 disabled:opacity-50 transition-all'
-      />
-      <button
-        type='submit'
-        disabled={isLoading || !text.trim()}
-        className='absolute right-2 w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-all shadow-sm active:scale-95'
-      >
-        {isLoading ? (
-          <Loader2 size={17} className='animate-spin' />
-        ) : (
-          <Send size={17} />
-        )}
-      </button>
-    </form>
-  )
-}
-
-// --- COPY BUTTON ---
-const CopyButton = ({ text }: { text: string }) => {
-  const [copied, setCopied] = useState(false)
-  const copy = () => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-  return (
-    <button
-      onClick={copy}
-      title='Copy response'
-      className='p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all opacity-0 group-hover:opacity-100'
-    >
-      {copied ? (
-        <Check size={14} className='text-green-500' />
-      ) : (
-        <Copy size={14} />
-      )}
-    </button>
-  )
-}
-
-// --- FILTER CHIP ---
-const FilterChip = ({
-  label,
-  value,
-  onRemove,
-  color = 'blue',
-}: {
-  label: string
-  value: string
-  onRemove: () => void
-  color?: 'blue' | 'purple'
-}) => {
-  const colors = {
-    blue: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',
-    purple:
-      'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100',
-  }
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-semibold border transition-colors ${colors[color]}`}
-    >
-      <span className='opacity-60'>{label}:</span>
-      {value}
-      <button
-        onClick={onRemove}
-        className='ml-0.5 rounded-full p-0.5 hover:bg-black/10 transition-colors'
-      >
-        <X size={11} />
-      </button>
-    </span>
-  )
-}
-
-// --- MAIN COMPONENT ---
 export default function ChatDashboard() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -202,6 +89,8 @@ export default function ChatDashboard() {
     null,
   )
   const [showInstructions, setShowInstructions] = useState(false)
+  const [inputText, setInputText] = useState('')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -210,14 +99,14 @@ export default function ChatDashboard() {
 
   const handleSend = async (text: string) => {
     if (!text.trim()) return
+    setInputText('')
     setMessages((prev) => [
       ...prev,
       { id: Date.now().toString(), role: 'user', content: text },
     ])
     setIsLoading(true)
-
     try {
-      const response = await fetch('http://localhost:8000/api/v1/query', {
+      const res = await fetch('http://localhost:8000/api/v1/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -226,7 +115,7 @@ export default function ChatDashboard() {
           state: searchState,
         }),
       })
-      const data = await response.json()
+      const data = await res.json()
       if (data.state) setSearchState(data.state)
       setMessages((prev) => [
         ...prev,
@@ -252,22 +141,35 @@ export default function ChatDashboard() {
     }
   }
 
-  const toggleChart = (msgId: string) => {
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === msgId ? { ...msg, showChart: !msg.showChart } : msg,
-      ),
-    )
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    handleSend(inputText)
   }
 
-  const removeFilter = (key: string, defaultValue: any = null) => {
-    setSearchState((prev) => (prev ? { ...prev, [key]: defaultValue } : null))
+  const toggleChart = (id: string) =>
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, showChart: !m.showChart } : m)),
+    )
+
+  const copyText = (id: string, text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
   }
+
+  const removeFilter = (key: string, defaultValue: any = null) =>
+    setSearchState((prev) => (prev ? { ...prev, [key]: defaultValue } : null))
 
   const clearChat = () => {
     setMessages([])
     setSearchState(null)
   }
+
+  const hasActiveFilters =
+    searchState &&
+    Object.values(searchState).some(
+      (v) => v !== null && v !== 'corporate_tickets' && v !== 'detail',
+    )
 
   const activeFilterChips = searchState
     ? [
@@ -276,7 +178,7 @@ export default function ChatDashboard() {
               key: 'domain',
               label: 'Domain',
               value: 'PPM',
-              color: 'purple' as const,
+              color: 'purple',
               defaultValue: 'corporate_tickets',
             }
           : null,
@@ -285,7 +187,7 @@ export default function ChatDashboard() {
               key: 'company_name',
               label: 'Company',
               value: searchState.company_name,
-              color: 'blue' as const,
+              color: 'blue',
             }
           : null,
         searchState.branch_name
@@ -293,7 +195,7 @@ export default function ChatDashboard() {
               key: 'branch_name',
               label: 'Branch',
               value: searchState.branch_name,
-              color: 'blue' as const,
+              color: 'blue',
             }
           : null,
         searchState.timeframe
@@ -301,7 +203,7 @@ export default function ChatDashboard() {
               key: 'timeframe',
               label: 'Time',
               value: searchState.timeframe,
-              color: 'blue' as const,
+              color: 'blue',
             }
           : null,
         searchState.status
@@ -309,7 +211,7 @@ export default function ChatDashboard() {
               key: 'status',
               label: 'Status',
               value: searchState.status,
-              color: 'blue' as const,
+              color: 'blue',
             }
           : null,
         searchState.priority
@@ -317,141 +219,292 @@ export default function ChatDashboard() {
               key: 'priority',
               label: 'Priority',
               value: searchState.priority,
-              color: 'blue' as const,
+              color: 'blue',
             }
           : null,
       ].filter(Boolean)
     : []
 
-  const hasActiveFilters = activeFilterChips.length > 0
+  const COLORS = [
+    '#3b82f6',
+    '#10b981',
+    '#f59e0b',
+    '#ef4444',
+    '#8b5cf6',
+    '#ec4899',
+    '#06b6d4',
+    '#64748b',
+  ]
 
-  // --- RENDERERS ---
+  const tooltipStyle = {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '10px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+    fontSize: 13,
+    color: '#1e293b',
+  }
+
   const renderChart = (data: any[]) => {
     if (!data || data.length === 0) return null
     const keys = Object.keys(data[0])
-    if (keys.length < 2)
-      return (
-        <p className='text-sm text-slate-500 p-4'>
-          Not enough data to visualize.
-        </p>
-      )
-
-    const xKey = keys[0]
-    const yKey = keys[1]
-
-    // Dynamic width calculation so vertical bars never get squished!
-    // Ensures a minimum width of 100%, but grows if there's lots of data.
-    const chartWidth = Math.max(100, data.length * 50)
+    if (keys.length < 2) return null
+    const xKey = keys[0],
+      yKey = keys[1]
+    const isTime = ['TimePeriod', 'CreatedDate', 'PPMDate'].includes(xKey)
+    const isDist = ['Status', 'CurrentStatus', 'Priority', 'Type'].includes(
+      xKey,
+    )
+    const h = isTime ? 300 : isDist ? 340 : 320
 
     return (
-      <div className='w-full mt-3 bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col shadow-sm'>
-        <div className='bg-slate-50 border-b border-slate-100 px-4 py-2.5 flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide'>
-          <BarChart2 size={13} />
-          {data.length} Items Rendered
-        </div>
-
-        {/* Horizontal Scrollable Container */}
+      <div
+        style={{
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: 14,
+          overflow: 'hidden',
+          marginTop: 8,
+        }}
+      >
         <div
-          className='p-4 overflow-x-auto custom-scrollbar'
-          style={{ height: '380px' }}
+          style={{
+            padding: '9px 14px',
+            borderBottom: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            background: '#f1f5f9',
+          }}
         >
-          {/* This inner div forces the chart to be wide enough to fit all bars cleanly */}
+          <TrendingUp size={12} color='#3b82f6' />
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#64748b',
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+            }}
+          >
+            {data.length} items ·{' '}
+            {isTime ? 'Trend' : isDist ? 'Distribution' : 'Comparison'}
+          </span>
+        </div>
+        <div style={{ padding: 16, height: h, overflowX: 'auto' }}>
           <div
             style={{
-              minWidth: `${chartWidth}px`,
+              minWidth:
+                isTime || isDist ? '100%' : Math.max(100, data.length * 50),
               width: '100%',
               height: '100%',
             }}
           >
             <ResponsiveContainer width='100%' height='100%'>
-              <BarChart
-                data={data}
-                margin={{ top: 10, right: 10, left: -20, bottom: 45 }}
-              >
-                <CartesianGrid
-                  strokeDasharray='3 3'
-                  vertical={false}
-                  stroke='#f1f5f9'
-                />
-                <XAxis
-                  dataKey={xKey}
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  height={50}
-                  tick={(props) => {
-                    const { x, y, payload } = props
-                    const yNum = Number(y)
-                    const label =
-                      payload.value.length > 14
-                        ? `${payload.value.substring(0, 14)}...`
-                        : payload.value
-                    return (
-                      <text
-                        x={x}
-                        y={yNum + 10}
-                        textAnchor='end'
-                        fill='#94a3b8'
-                        fontSize={11}
-                        // Rotates the text nicely like your original chart!
-                        transform={`rotate(-40, ${x}, ${yNum + 10})`}
-                      >
-                        {label}
-                      </text>
-                    )
-                  }}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <RechartsTooltip
-                  cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.08)',
-                    fontSize: 13,
-                  }}
-                />
-                <Bar
-                  dataKey={yKey}
-                  fill='#3b82f6'
-                  radius={[5, 5, 0, 0]} // Restores the top rounded corners
-                  barSize={36}
-                />
-              </BarChart>
+              {isTime ? (
+                <LineChart
+                  data={data}
+                  margin={{ top: 10, right: 16, left: -20, bottom: 10 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray='3 3'
+                    vertical={false}
+                    stroke='#f1f5f9'
+                  />
+                  <XAxis
+                    dataKey={xKey}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    dy={8}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  />
+                  <RechartsTooltip
+                    cursor={{ stroke: '#e2e8f0', strokeWidth: 1 }}
+                    contentStyle={tooltipStyle}
+                  />
+                  <Line
+                    type='monotone'
+                    dataKey={yKey}
+                    stroke='#3b82f6'
+                    strokeWidth={2.5}
+                    dot={{
+                      r: 3.5,
+                      fill: '#3b82f6',
+                      strokeWidth: 2,
+                      stroke: '#fff',
+                    }}
+                    activeDot={{ r: 5, strokeWidth: 0 }}
+                  />
+                </LineChart>
+              ) : isDist ? (
+                <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+                  <Pie
+                    data={data}
+                    cx='50%'
+                    cy='43%'
+                    innerRadius={70}
+                    outerRadius={110}
+                    paddingAngle={3}
+                    dataKey={yKey}
+                    nameKey={xKey}
+                    stroke='none'
+                  >
+                    {data.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip contentStyle={tooltipStyle} />
+                  <Legend
+                    verticalAlign='bottom'
+                    height={36}
+                    iconType='circle'
+                    wrapperStyle={{
+                      fontSize: 12,
+                      color: '#64748b',
+                      paddingTop: 16,
+                    }}
+                  />
+                </PieChart>
+              ) : (
+                <BarChart
+                  data={data}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 45 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray='3 3'
+                    vertical={false}
+                    stroke='#f1f5f9'
+                  />
+                  <XAxis
+                    dataKey={xKey}
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    height={50}
+                    tick={(p) => {
+                      const label =
+                        p.payload.value.length > 14
+                          ? p.payload.value.substring(0, 14) + '…'
+                          : p.payload.value
+                      const px = Number(p.x),
+                        py = Number(p.y)
+                      return (
+                        <text
+                          x={px}
+                          y={py + 10}
+                          textAnchor='end'
+                          fill='#94a3b8'
+                          fontSize={11}
+                          transform={`rotate(-40,${px},${py + 10})`}
+                        >
+                          {label}
+                        </text>
+                      )
+                    }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  />
+                  <RechartsTooltip
+                    cursor={{ fill: '#f8fafc' }}
+                    contentStyle={tooltipStyle}
+                  />
+                  <Bar
+                    dataKey={yKey}
+                    fill='#3b82f6'
+                    radius={[5, 5, 0, 0]}
+                    barSize={30}
+                  />
+                </BarChart>
+              )}
             </ResponsiveContainer>
           </div>
         </div>
       </div>
     )
   }
+
   const renderTable = (data: any[]) => {
     if (!data || data.length === 0) return null
     if (data.length === 1 && Object.keys(data[0]).length === 1) {
       return (
-        <div className='mt-3 px-5 py-4 bg-blue-50 border border-blue-100 rounded-xl text-blue-800 font-semibold text-lg'>
+        <div
+          style={{
+            marginTop: 8,
+            padding: '14px 18px',
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: 12,
+            color: '#1d4ed8',
+            fontWeight: 700,
+            fontSize: 26,
+            letterSpacing: '-0.02em',
+          }}
+        >
           {String(Object.values(data[0])[0])}
         </div>
       )
     }
     const headers = Object.keys(data[0])
     return (
-      <div className='mt-3 w-full bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden'>
-        <div className='bg-slate-50 border-b border-slate-100 px-4 py-2.5 flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide'>
-          <LayoutList size={13} />
-          {data.length} rows
+      <div
+        style={{
+          marginTop: 8,
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: 14,
+          overflow: 'hidden',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+        }}
+      >
+        <div
+          style={{
+            padding: '9px 14px',
+            borderBottom: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            background: '#f8fafc',
+          }}
+        >
+          <LayoutList size={12} color='#3b82f6' />
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#64748b',
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+            }}
+          >
+            {data.length} rows
+          </span>
         </div>
-        <div className='overflow-x-auto max-h-112.5'>
+        <div style={{ overflowX: 'auto', maxHeight: 320 }}>
           <Table>
-            <TableHeader className='bg-slate-50/80 sticky top-0 z-10'>
-              <TableRow>
+            <TableHeader>
+              <TableRow style={{ borderColor: '#f1f5f9' }}>
                 {headers.map((h) => (
                   <TableHead
                     key={h}
-                    className='font-semibold text-slate-600 text-xs whitespace-nowrap py-2.5'
+                    style={{
+                      color: '#475569',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      padding: '9px 14px',
+                      position: 'sticky',
+                      top: 0,
+                      background: '#f8fafc',
+                      borderBottom: '1px solid #e2e8f0',
+                    }}
                   >
                     {h}
                   </TableHead>
@@ -462,17 +515,33 @@ export default function ChatDashboard() {
               {data.map((row, i) => (
                 <TableRow
                   key={i}
-                  className='hover:bg-slate-50/70 transition-colors'
+                  style={{ borderColor: '#f8fafc' }}
+                  onMouseEnter={(e) =>
+                    ((e.currentTarget as HTMLElement).style.background =
+                      '#f8fafc')
+                  }
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLElement).style.background =
+                      'transparent')
+                  }
                 >
                   {headers.map((h, j) => (
                     <TableCell
                       key={j}
-                      className='whitespace-nowrap max-w-50 truncate text-slate-600 text-[13px] py-2.5'
+                      style={{
+                        whiteSpace: 'nowrap',
+                        maxWidth: 200,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        color: '#475569',
+                        fontSize: 13,
+                        padding: '9px 14px',
+                      }}
                     >
                       {row[h] !== null && row[h] !== '' ? (
                         String(row[h])
                       ) : (
-                        <span className='text-slate-300'>—</span>
+                        <span style={{ color: '#cbd5e1' }}>—</span>
                       )}
                     </TableCell>
                   ))}
@@ -486,346 +555,1000 @@ export default function ChatDashboard() {
   }
 
   const SAMPLE_QUERIES = [
-    'Give me a breakdown of corporate tickets by company',
-    'Show me PPM ticket status across companies in jan 2026',
-    'Total closed tickets in the dec 2025',
-    'PPM tickets of Banglore in 2025',
+    { text: 'Breakdown of corporate tickets by company', icon: '📊' },
+    { text: 'PPM ticket status across companies in Jan 2026', icon: '🗓️' },
+    { text: 'Total closed tickets in Dec 2025', icon: '✅' },
+    { text: 'PPM tickets of Bangalore in 2025', icon: '📍' },
   ]
 
   return (
-    <div className='flex flex-col h-screen bg-slate-50 font-sans overflow-hidden'>
-      {/* HEADER */}
-      <header className='shrink-0 bg-white border-b border-slate-200 px-5 py-3.5 flex items-center justify-between z-20 shadow-sm'>
-        <div className='flex items-center gap-3'>
-          <div className='w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm'>
-            <Sparkles className='w-4.5 h-4.5 text-white' size={18} />
-          </div>
-          <div>
-            <h1 className='text-[15px] font-bold text-slate-800 leading-tight tracking-tight'>
-              TechxAI
-            </h1>
-            <p className='text-[11px] text-slate-400 font-medium'>
-              Enterprise Search Engine
-            </p>
-          </div>
-        </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-        <div className='flex items-center gap-2'>
-          {messages.length > 0 && (
-            <button
-              onClick={clearChat}
-              className='flex items-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-red-500 px-3 py-2 rounded-lg hover:bg-red-50 transition-all'
-            >
-              <Trash2 size={14} /> Clear
-            </button>
-          )}
-          <button
-            onClick={() => setShowInstructions(true)}
-            className='flex items-center gap-1.5 text-[13px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3.5 py-2 rounded-lg transition-all border border-blue-100'
-          >
-            <Info size={14} /> How to Use
-          </button>
-        </div>
-      </header>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      {/* CHAT AREA */}
-      <main className='flex-1 overflow-y-auto'>
-        <div className='max-w-5xl mx-auto px-4 py-6 space-y-6'>
-          {/* Empty state */}
-          {messages.length === 0 && (
-            <div className='mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500'>
-              <div className='bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center mb-6'>
-                <div className='w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4'>
-                  <BarChart2 size={28} className='text-blue-500' />
-                </div>
-                <h2 className='text-xl font-bold text-slate-800 mb-2'>
-                  AI Data Assistant
-                </h2>
-                <p className='text-slate-500 text-[14px] max-w-md mx-auto leading-relaxed'>
-                  Ask questions about your Corporate or PPM tickets. Summarize,
-                  filter, visualize — all in plain English.
-                </p>
+        .txai-root {
+          font-family: 'Inter', -apple-system, sans-serif;
+          display: flex;
+          flex-direction: column;
+          height: 100vh;
+          overflow: hidden;
+          background: #f1f5f9;
+        }
+
+        .txai-header {
+          z-index: 20;
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 20px;
+          height: 56px;
+          background: #ffffff;
+          border-bottom: 1px solid #e2e8f0;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+
+        .txai-main {
+          flex: 1;
+          overflow-y: auto;
+          scroll-behavior: smooth;
+        }
+        .txai-main::-webkit-scrollbar { width: 5px; }
+        .txai-main::-webkit-scrollbar-track { background: transparent; }
+        .txai-main::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+
+        .txai-footer {
+          z-index: 20;
+          flex-shrink: 0;
+          padding: 10px 16px 14px;
+          background: #ffffff;
+          border-top: 1px solid #e2e8f0;
+          box-shadow: 0 -1px 3px rgba(0,0,0,0.04);
+        }
+
+        /* Buttons */
+        .btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 7px 13px; border-radius: 9px;
+          font-size: 13px; font-weight: 500; cursor: pointer;
+          transition: all 0.13s ease; font-family: 'Inter', sans-serif;
+          border: 1px solid;
+        }
+        .btn-ghost {
+          background: transparent;
+          border-color: #e2e8f0;
+          color: #64748b;
+        }
+        .btn-ghost:hover { background: #f8fafc; color: #334155; border-color: #cbd5e1; }
+        .btn-ghost.danger:hover { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+        .btn-primary {
+          background: #eff6ff;
+          border-color: #bfdbfe;
+          color: #2563eb;
+        }
+        .btn-primary:hover { background: #dbeafe; border-color: #93c5fd; }
+
+        /* Sample cards */
+        .sample-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px; padding: 13px 15px;
+          cursor: pointer; display: flex; align-items: flex-start;
+          gap: 10px; text-align: left;
+          transition: all 0.13s ease; font-family: 'Inter', sans-serif;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+        .sample-card:hover {
+          border-color: #93c5fd;
+          background: #f0f7ff;
+          box-shadow: 0 2px 8px rgba(59,130,246,0.1);
+          transform: translateY(-1px);
+        }
+
+        /* Chat bubbles */
+        .bubble-user {
+          padding: 11px 15px;
+          background: transparent;
+          border: 1.5px solid #93c5fd;
+          border-radius: 18px;
+          border-top-right-radius: 5px;
+          color: #1e40af;
+          font-size: 14px;
+          line-height: 1.6;
+          font-weight: 500;
+        }
+        .bubble-ai {
+          padding: 12px 16px;
+          background: #f0f9ff;
+          border: 1px solid #bae6fd;
+          border-radius: 18px;
+          border-top-left-radius: 5px;
+          color: #0f172a;
+          font-size: 14px;
+          line-height: 1.65;
+          max-width: 92%;
+        }
+
+        /* Avatars */
+        .avatar-user {
+          width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+          background: #eff6ff;
+          border: 1.5px solid #93c5fd;
+          display: flex; align-items: center; justify-content: center;
+          color: #2563eb;
+        }
+        .avatar-ai {
+          width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+          background: #f0f9ff;
+          border: 1px solid #bae6fd;
+          display: flex; align-items: center; justify-content: center;
+          color: #0284c7;
+        }
+
+        /* Inline icon buttons on bubbles */
+        .icon-btn {
+          padding: 5px; border-radius: 7px; background: transparent;
+          border: none; cursor: pointer; transition: all 0.12s;
+          display: flex; align-items: center; justify-content: center;
+          opacity: 0;
+          color: #94a3b8;
+        }
+        .msg-row:hover .icon-btn { opacity: 1; }
+        .icon-btn:hover { background: #f1f5f9; color: #475569; }
+
+        /* Input */
+        .txai-input {
+          width: 100%; border-radius: 14px;
+          padding: 13px 50px 13px 16px;
+          background: #f8fafc;
+          border: 1.5px solid #e2e8f0;
+          color: #1e293b;
+          font-size: 15px; font-family: 'Inter', sans-serif;
+          outline: none; transition: all 0.13s ease;
+        }
+        .txai-input::placeholder { color: #94a3b8; }
+        .txai-input:focus {
+          border-color: #93c5fd;
+          background: #ffffff;
+          box-shadow: 0 0 0 3px rgba(59,130,246,0.07);
+        }
+        .txai-input:disabled { opacity: 0.5; }
+
+        .send-btn {
+          position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+          width: 36px; height: 36px; border-radius: 11px; border: none;
+          background: #2563eb;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; color: white;
+          box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+          transition: all 0.13s ease;
+        }
+        .send-btn:hover { background: #1d4ed8; box-shadow: 0 4px 12px rgba(37,99,235,0.4); }
+        .send-btn:active { transform: translateY(-50%) scale(0.95); }
+        .send-btn:disabled {
+          background: #e2e8f0; box-shadow: none;
+          color: #94a3b8; cursor: not-allowed;
+        }
+
+        /* Action pills */
+        .action-pill {
+          font-size: 12px; font-weight: 600; padding: 5px 13px;
+          border-radius: 99px;
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+          color: #2563eb;
+          cursor: pointer; transition: all 0.12s;
+          font-family: 'Inter', sans-serif;
+        }
+        .action-pill:hover { background: #dbeafe; border-color: #93c5fd; }
+
+        /* Data buttons */
+        .data-btn {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 5px 11px; border-radius: 8px;
+          font-size: 12px; font-weight: 600;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          color: #64748b;
+          cursor: pointer; transition: all 0.12s;
+          font-family: 'Inter', sans-serif;
+        }
+        .data-btn:hover { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+        .data-btn.csv:hover { background: #f0fdf4; color: #16a34a; border-color: #86efac; }
+
+        /* Filter chips */
+        .filter-chip {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 3px 9px 3px 10px; border-radius: 99px;
+          font-size: 12px; font-weight: 600; border: 1px solid;
+        }
+
+        /* Badge */
+        .badge-cap {
+          display: inline-block; font-size: 11px; font-weight: 600;
+          padding: 3px 10px; border-radius: 99px;
+          background: #ffffff; border: 1px solid #e2e8f0;
+          color: #64748b;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        }
+
+        /* Loader dots */
+        .pulse-dot {
+          width: 6px; height: 6px; background: #93c5fd;
+          border-radius: 99px;
+          animation: pdot 1.2s ease-in-out infinite;
+        }
+        @keyframes pdot {
+          0%,80%,100% { transform: translateY(0); opacity: 0.5; }
+          40% { transform: translateY(-5px); opacity: 1; }
+        }
+
+        /* Fade up */
+        .fade-up { animation: fu 0.22s ease forwards; }
+        @keyframes fu {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Modal */
+        .modal-overlay {
+          position: fixed; inset: 0; z-index: 50;
+          display: flex; align-items: center; justify-content: center; padding: 16px;
+          background: rgba(15,23,42,0.35);
+          backdrop-filter: blur(6px);
+        }
+        .modal-box {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 20px; width: 100%; max-width: 480px; overflow: hidden;
+          box-shadow: 0 24px 60px rgba(0,0,0,0.12);
+          animation: fu 0.18s ease;
+        }
+        .modal-scroll::-webkit-scrollbar { width: 4px; }
+        .modal-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 99px; }
+
+        /* Logo */
+        .logo-mark {
+          width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+          background: linear-gradient(135deg, #3b82f6, #6366f1);
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+        }
+
+        /* Empty state icon */
+        .empty-icon {
+          width: 60px; height: 60px; border-radius: 18px; margin: 0 auto 18px;
+          background: #eff6ff; border: 1px solid #bfdbfe;
+          display: flex; align-items: center; justify-content: center;
+          position: relative;
+        }
+      `}</style>
+
+      <div className='txai-root'>
+        {/* ── HEADER ── */}
+        <header className='txai-header'>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className='logo-mark'>
+              <Zap size={16} color='white' fill='white' />
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.2,
+                }}
+              >
+                TechxAI
               </div>
-              <div className='grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-3xl mx-auto'>
-                {SAMPLE_QUERIES.map((q, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSend(q)}
-                    className='p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-blue-400 hover:shadow-md hover:text-blue-700 transition-all text-left text-slate-600 text-[13px] font-medium leading-snug'
-                  >
-                    "{q}"
-                  </button>
-                ))}
+              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>
+                Enterprise Search Engine
               </div>
             </div>
-          )}
-
-          {/* Messages */}
-          {messages.map((msg, index) => (
-            <div
-              key={msg.id}
-              className={`flex gap-3 animate-in fade-in duration-300 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {messages.length > 0 && (
+              <button className='btn btn-ghost danger' onClick={clearChat}>
+                <Trash2 size={13} /> Clear
+              </button>
+            )}
+            <button
+              className='btn btn-primary'
+              onClick={() => setShowInstructions(true)}
             >
-              {/* Avatar */}
-              <div
-                className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                  msg.role === 'user'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'bg-white border border-slate-200 text-slate-500 shadow-sm'
-                }`}
-              >
-                {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-              </div>
+              <Info size={13} /> How to Use
+            </button>
+          </div>
+        </header>
 
-              {/* Bubble + data - REBUILT WIDTH LOGIC HERE */}
-              <div
-                className={`flex flex-col gap-2 min-w-0 ${
-                  msg.role === 'user'
-                    ? 'items-end max-w-[85%]'
-                    : 'items-start w-full max-w-[95%]'
-                }`}
-              >
-                {/* Text String Bubble */}
-                <div className='flex items-start gap-1.5 group w-full'>
-                  <div
-                    className={`px-4 py-3 text-[14px] leading-relaxed rounded-2xl shadow-sm inline-block w-fit ${
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white rounded-tr-sm'
-                        : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm max-w-[85%]'
-                    }`}
-                  >
-                    {msg.content}
+        {/* ── MAIN ── */}
+        <main className='txai-main'>
+          <div
+            style={{
+              maxWidth: 820,
+              margin: '0 auto',
+              padding: '28px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 18,
+            }}
+          >
+            {/* Empty state */}
+            {messages.length === 0 && (
+              <div className='fade-up' style={{ marginTop: 8 }}>
+                <div style={{ textAlign: 'center', marginBottom: 28 }}>
+                  <div className='empty-icon'>
+                    <BarChart2 size={26} color='#3b82f6' />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: -6,
+                        right: -6,
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 2px 8px rgba(99,102,241,0.4)',
+                        border: '2px solid white',
+                      }}
+                    >
+                      <Sparkles size={10} color='white' />
+                    </div>
                   </div>
-                  {msg.role === 'ai' && <CopyButton text={msg.content} />}
+                  <h2
+                    style={{
+                      fontSize: 22,
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      marginBottom: 8,
+                      letterSpacing: '-0.03em',
+                    }}
+                  >
+                    AI Data Assistant
+                  </h2>
+                  <p
+                    style={{
+                      fontSize: 14,
+                      color: '#64748b',
+                      maxWidth: 340,
+                      margin: '0 auto',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Ask questions about your Corporate or PPM tickets.
+                    Summarize, filter, visualize — all in plain English.
+                  </p>
                 </div>
 
-                {/* Suggested Actions */}
-                {msg.role === 'ai' &&
-                  msg.data?.suggested_actions &&
-                  msg.data.suggested_actions.length > 0 &&
-                  index === messages.length - 1 && (
-                    <div className='flex flex-wrap gap-2 mt-1 mb-2'>
-                      {msg.data.suggested_actions.map((action, i) => (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2,1fr)',
+                    gap: 9,
+                    maxWidth: 640,
+                    margin: '0 auto 24px',
+                  }}
+                >
+                  {SAMPLE_QUERIES.map((q, i) => (
+                    <button
+                      key={i}
+                      className='sample-card'
+                      onClick={() => handleSend(q.text)}
+                    >
+                      <span
+                        style={{ fontSize: 17, lineHeight: 1, flexShrink: 0 }}
+                      >
+                        {q.icon}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: '#475569',
+                          lineHeight: 1.45,
+                          flex: 1,
+                        }}
+                      >
+                        {q.text}
+                      </span>
+                      <ChevronRight
+                        size={13}
+                        color='#93c5fd'
+                        style={{ flexShrink: 0, marginTop: 1 }}
+                      />
+                    </button>
+                  ))}
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                    gap: 7,
+                  }}
+                >
+                  {[
+                    'Corporate Tickets',
+                    'PPM Tickets',
+                    'Charts & Trends',
+                    'Export CSV',
+                    'Smart Filters',
+                  ].map((b) => (
+                    <span key={b} className='badge-cap'>
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Messages */}
+            {messages.map((msg, index) => (
+              <div
+                key={msg.id}
+                className='fade-up msg-row'
+                style={{
+                  display: 'flex',
+                  flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                  /* FIX: align-items start so avatar sits flush with top of bubble */
+                  alignItems: 'flex-start',
+                  gap: 10,
+                }}
+              >
+                {/* Avatar — no extra margin top so it lines up with bubble top */}
+                <div
+                  className={msg.role === 'user' ? 'avatar-user' : 'avatar-ai'}
+                >
+                  {msg.role === 'user' ? <User size={15} /> : <Bot size={15} />}
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 7,
+                    minWidth: 0,
+                    flex: 1,
+                    alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                    maxWidth: msg.role === 'user' ? '76%' : '94%',
+                  }}
+                >
+                  {/* Bubble + action icons */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 5,
+                    }}
+                  >
+                    <div
+                      className={
+                        msg.role === 'user' ? 'bubble-user' : 'bubble-ai'
+                      }
+                    >
+                      {msg.content}
+                    </div>
+
+                    {/* Copy button — shown for BOTH user and AI bubbles */}
+                    <button
+                      className='icon-btn'
+                      title='Copy message'
+                      onClick={() => copyText(msg.id, msg.content)}
+                      style={{ marginTop: 4 }}
+                    >
+                      {copiedId === msg.id ? (
+                        <Check size={13} color='#22c55e' />
+                      ) : (
+                        <Copy size={13} />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Suggested action pills */}
+                  {msg.role === 'ai' &&
+                    msg.data &&
+                    msg.data.suggested_actions &&
+                    msg.data.suggested_actions.length > 0 &&
+                    index === messages.length - 1 && (
+                      <div
+                        style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
+                      >
+                        {msg.data.suggested_actions.map(
+                          (a: string, i: number) => (
+                            <button
+                              key={i}
+                              className='action-pill'
+                              onClick={() => handleSend(a)}
+                            >
+                              {a}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                    )}
+
+                  {/* Data panel */}
+                  {msg.data && msg.data.raw_data.length > 0 && (
+                    <div style={{ width: '100%' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'flex-end',
+                          gap: 7,
+                          marginBottom: 7,
+                        }}
+                      >
                         <button
-                          key={i}
-                          onClick={() => handleSend(action)}
-                          className='text-[13px] px-3.5 py-1.5 bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-full transition-all shadow-sm font-semibold active:scale-95 flex items-center gap-1.5'
+                          className='data-btn csv'
+                          onClick={() =>
+                            downloadCSV(
+                              msg.data!.raw_data,
+                              `techxai-${Date.now()}.csv`,
+                            )
+                          }
                         >
-                          {action}
+                          <Download size={12} /> Export CSV
                         </button>
-                      ))}
+                        {msg.data.state?.intent === 'summary' &&
+                          msg.data.raw_data.length <= 50 && (
+                            <button
+                              className='data-btn'
+                              onClick={() => toggleChart(msg.id)}
+                            >
+                              {msg.showChart ? (
+                                <>
+                                  <TableIcon size={12} /> Table
+                                </>
+                              ) : (
+                                <>
+                                  <BarChart2 size={12} /> Visualize
+                                </>
+                              )}
+                            </button>
+                          )}
+                      </div>
+                      {msg.showChart
+                        ? renderChart(msg.data.raw_data)
+                        : renderTable(msg.data.raw_data)}
                     </div>
                   )}
-
-                {/* Data results */}
-                {msg.data?.raw_data && msg.data.raw_data.length > 0 && (
-                  <div className='w-full mt-2'>
-                    {/* NEW EXPORT AND TOGGLE BUTTON ROW */}
-                    <div className='flex justify-end gap-2 mb-2'>
-                      {/* EXPORT TO EXCEL/CSV BUTTON */}
-                      <button
-                        onClick={() =>
-                          downloadCSV(
-                            msg.data!.raw_data,
-                            `techxai-export-${Date.now()}.csv`,
-                          )
-                        }
-                        className='flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:border-green-300 text-[12px] font-semibold rounded-lg shadow-sm hover:bg-green-50 hover:text-green-700 transition-all'
-                      >
-                        <Download size={13} /> Export CSV
-                      </button>
-
-                      {/* CHART/TABLE TOGGLE (Only if summary and < 50 rows) */}
-                      {msg.data.state?.intent === 'summary' &&
-                        msg.data.raw_data.length <= 50 && (
-                          <button
-                            onClick={() => toggleChart(msg.id)}
-                            className='flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg shadow-sm hover:bg-slate-50 hover:text-blue-600 transition-all'
-                          >
-                            {msg.showChart ? (
-                              <>
-                                <TableIcon size={13} /> Show Table
-                              </>
-                            ) : (
-                              <>
-                                <BarChart2 size={13} /> Visualize
-                              </>
-                            )}
-                          </button>
-                        )}
-                    </div>
-
-                    {/* Render Content */}
-                    {msg.showChart
-                      ? renderChart(msg.data.raw_data)
-                      : renderTable(msg.data.raw_data)}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {/* Loading */}
-          {isLoading && (
-            <div className='flex gap-3 animate-in fade-in duration-300'>
-              <div className='w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-400 shadow-sm flex items-center justify-center shrink-0'>
-                <Bot size={16} />
-              </div>
-              <div className='px-4 py-3 rounded-2xl w-fit rounded-tl-sm bg-white border border-slate-200 text-slate-400 shadow-sm flex items-center gap-2 text-[13px]'>
-                <span className='flex gap-1 items-center'>
-                  <span
-                    className='w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce'
-                    style={{ animationDelay: '0ms' }}
-                  />
-                  <span
-                    className='w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce'
-                    style={{ animationDelay: '120ms' }}
-                  />
-                  <span
-                    className='w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce'
-                    style={{ animationDelay: '240ms' }}
-                  />
-                </span>
-                Analyzing...
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} className='h-4' />
-        </div>
-      </main>
-
-      {/* FOOTER */}
-      <footer className='shrink-0 bg-white border-t border-slate-200 px-4 py-3.5'>
-        <div className='max-w-5xl mx-auto flex flex-col gap-2.5'>
-          {hasActiveFilters && (
-            <div className='flex flex-wrap items-center gap-1.5'>
-              <span className='flex items-center gap-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-0.5'>
-                <Filter size={11} /> Filters:
-              </span>
-              {activeFilterChips.map((chip: any) => (
-                <FilterChip
-                  key={chip.key}
-                  label={chip.label}
-                  value={chip.value}
-                  color={chip.color}
-                  onRemove={() =>
-                    removeFilter(chip.key, chip.defaultValue ?? null)
-                  }
-                />
-              ))}
-              <button
-                onClick={() => setSearchState(null)}
-                className='text-[11px] font-medium text-slate-400 hover:text-red-500 ml-1 transition-colors'
-              >
-                Clear all
-              </button>
-            </div>
-          )}
-
-          <ChatInput
-            onSend={handleSend}
-            isLoading={isLoading}
-            searchState={searchState}
-          />
-          <p className='text-[11px] text-center text-slate-400 font-medium'>
-            AI can make mistakes. Verify critical data against the source
-            system.
-          </p>
-        </div>
-      </footer>
-
-      {/* INSTRUCTIONS MODAL */}
-      {showInstructions && (
-        <div
-          className='fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4'
-          onClick={(e) =>
-            e.target === e.currentTarget && setShowInstructions(false)
-          }
-        >
-          <div className='bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200'>
-            <div className='px-6 py-4 border-b border-slate-100 flex justify-between items-center'>
-              <h3 className='text-base font-bold text-slate-800 flex items-center gap-2'>
-                <Info size={17} className='text-blue-600' /> How to Use
-              </h3>
-              <button
-                onClick={() => setShowInstructions(false)}
-                className='text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors'
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className='p-6 overflow-y-auto max-h-[65vh] text-slate-600 space-y-5 text-[14px]'>
-              <section>
-                <h4 className='font-bold text-slate-800 mb-2'>
-                  Available Data
-                </h4>
-                <div className='grid grid-cols-2 gap-3'>
-                  <div className='p-3.5 rounded-xl bg-blue-50 border border-blue-100'>
-                    <strong className='text-blue-700 text-[13px] block mb-1'>
-                      Corporate Tickets
-                    </strong>
-                    <span className='text-slate-500 text-[12px]'>
-                      AMC, R&M, Suplly and all available. Default domain.
-                    </span>
-                  </div>
-                  <div className='p-3.5 rounded-xl bg-violet-50 border border-violet-100'>
-                    <strong className='text-violet-700 text-[13px] block mb-1'>
-                      PPM Tickets
-                    </strong>
-                    <span className='text-slate-500 text-[12px]'>
-                      Planned Preventive Maintenance. Say "PPM" to switch.
-                    </span>
-                  </div>
                 </div>
-              </section>
-              <section>
-                <h4 className='font-bold text-slate-800 mb-2'>Tips</h4>
-                <ul className='space-y-2'>
-                  {[
-                    [
-                      'Be specific with time',
-                      '"in January 2026" or "last 30 days"',
-                    ],
-                    [
-                      'Drill down',
-                      '"Show me details for [Company Name]" — AI remembers context',
-                    ],
-                    [
-                      'Clear filters',
-                      'Use the ✕ chips above the input to reset your search scope',
-                    ],
-                  ].map(([title, desc]) => (
-                    <li key={title} className='flex gap-2.5'>
-                      <span className='w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 shrink-0' />
-                      <span>
-                        <strong className='text-slate-700'>{title}:</strong>{' '}
-                        {desc}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-              <section>
-                <h4 className='font-bold text-slate-800 mb-1'>Privacy</h4>
-                <p className='text-slate-500 text-[13px]'>
-                  Financial, billing, and quotation records are off-limits. The
-                  AI cannot answer questions about prices, costs, or vendor
-                  payouts.
-                </p>
-              </section>
-            </div>
-            <div className='px-6 py-3.5 border-t border-slate-100 bg-slate-50 flex justify-end'>
-              <button
-                onClick={() => setShowInstructions(false)}
-                className='bg-blue-600 text-white px-5 py-2 rounded-lg text-[14px] font-semibold hover:bg-blue-700 transition-colors'
+              </div>
+            ))}
+
+            {/* Typing indicator */}
+            {isLoading && (
+              <div
+                className='fade-up'
+                style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}
               >
-                Got it
+                <div className='avatar-ai'>
+                  <Bot size={15} />
+                </div>
+                <div
+                  style={{
+                    padding: '12px 15px',
+                    background: '#f0f9ff',
+                    border: '1px solid #bae6fd',
+                    borderRadius: 18,
+                    borderTopLeftRadius: 5,
+                    display: 'flex',
+                    gap: 5,
+                    alignItems: 'center',
+                  }}
+                >
+                  {[0, 160, 320].map((d) => (
+                    <div
+                      key={d}
+                      className='pulse-dot'
+                      style={{ animationDelay: `${d}ms` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} style={{ height: 16 }} />
+          </div>
+        </main>
+
+        {/* ── FOOTER ── */}
+        <footer className='txai-footer'>
+          <div
+            style={{
+              maxWidth: 820,
+              margin: '0 auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 9,
+            }}
+          >
+            {/* Active filters */}
+            {hasActiveFilters && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: '#94a3b8',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.07em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Filter size={10} /> Filters
+                </span>
+                {activeFilterChips.map((chip: any) => (
+                  <span
+                    key={chip.key}
+                    className='filter-chip'
+                    style={
+                      chip.color === 'purple'
+                        ? {
+                            background: '#faf5ff',
+                            borderColor: '#d8b4fe',
+                            color: '#7c3aed',
+                          }
+                        : {
+                            background: '#eff6ff',
+                            borderColor: '#bfdbfe',
+                            color: '#2563eb',
+                          }
+                    }
+                  >
+                    <span style={{ opacity: 0.6 }}>{chip.label}:</span>
+                    {chip.value}
+                    <button
+                      onClick={() =>
+                        removeFilter(chip.key, chip.defaultValue ?? null)
+                      }
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '1px 2px',
+                        display: 'flex',
+                        color: 'inherit',
+                        opacity: 0.55,
+                        lineHeight: 1,
+                      }}
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  onClick={() => setSearchState(null)}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: '#94a3b8',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '2px 4px',
+                    transition: 'color 0.12s',
+                    fontFamily: 'Inter, sans-serif',
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.color = '#dc2626')
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.color = '#94a3b8')
+                  }
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+
+            {/* Input */}
+            <form
+              onSubmit={handleSubmit}
+              style={{
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <input
+                className='txai-input'
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                disabled={isLoading}
+                placeholder={
+                  hasActiveFilters
+                    ? 'Search within current filters...'
+                    : 'Ask anything about your tickets...'
+                }
+              />
+              <button
+                type='submit'
+                className='send-btn'
+                disabled={isLoading || !inputText.trim()}
+              >
+                {isLoading ? (
+                  <Loader2 size={15} className='animate-spin' />
+                ) : (
+                  <Send size={15} />
+                )}
               </button>
+            </form>
+
+            <p
+              style={{
+                fontSize: 11,
+                textAlign: 'center',
+                color: '#cbd5e1',
+                fontWeight: 500,
+              }}
+            >
+              AI can make mistakes · Verify critical data against the source
+              system
+            </p>
+          </div>
+        </footer>
+
+        {/* ── MODAL ── */}
+        {showInstructions && (
+          <div
+            className='modal-overlay'
+            onClick={(e) =>
+              e.target === e.currentTarget && setShowInstructions(false)
+            }
+          >
+            <div className='modal-box'>
+              <div
+                style={{
+                  padding: '15px 20px',
+                  borderBottom: '1px solid #f1f5f9',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  <Info size={16} color='#3b82f6' /> How to Use
+                </div>
+                <button
+                  className='btn btn-ghost'
+                  style={{ padding: '5px 8px' }}
+                  onClick={() => setShowInstructions(false)}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div
+                className='modal-scroll'
+                style={{
+                  padding: 20,
+                  overflowY: 'auto',
+                  maxHeight: '60vh',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 20,
+                }}
+              >
+                <section>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#94a3b8',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      marginBottom: 10,
+                    }}
+                  >
+                    Available Data
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 9,
+                    }}
+                  >
+                    {[
+                      {
+                        title: 'Corporate Tickets',
+                        desc: 'AMC, R&M, Supply and all. Default domain.',
+                        color: '#2563eb',
+                        bg: '#eff6ff',
+                        border: '#bfdbfe',
+                      },
+                      {
+                        title: 'PPM Tickets',
+                        desc: 'Planned Preventive Maintenance. Say "PPM" to switch.',
+                        color: '#7c3aed',
+                        bg: '#faf5ff',
+                        border: '#ddd6fe',
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.title}
+                        style={{
+                          padding: 13,
+                          borderRadius: 10,
+                          background: item.bg,
+                          border: `1px solid ${item.border}`,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: item.color,
+                            marginBottom: 4,
+                          }}
+                        >
+                          {item.title}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: '#64748b',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {item.desc}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#94a3b8',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      marginBottom: 10,
+                    }}
+                  >
+                    Tips
+                  </div>
+                  <div
+                    style={{ display: 'flex', flexDirection: 'column', gap: 9 }}
+                  >
+                    {[
+                      ['Specific dates', '"in January 2026" or "last 30 days"'],
+                      [
+                        'Drill down',
+                        '"Show me details for [Company]" — AI remembers context',
+                      ],
+                      [
+                        'Clear filters',
+                        'Use the ✕ chips above the input to reset scope',
+                      ],
+                    ].map(([t, d]) => (
+                      <div
+                        key={t}
+                        style={{
+                          display: 'flex',
+                          gap: 9,
+                          alignItems: 'flex-start',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: '50%',
+                            background: '#3b82f6',
+                            marginTop: 7,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: 13,
+                            color: '#475569',
+                            lineHeight: 1.55,
+                          }}
+                        >
+                          <strong style={{ color: '#1e293b', fontWeight: 600 }}>
+                            {t}:
+                          </strong>{' '}
+                          {d}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#94a3b8',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      marginBottom: 8,
+                    }}
+                  >
+                    Privacy
+                  </div>
+                  <p
+                    style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6 }}
+                  >
+                    Financial, billing, and quotation records are off-limits.
+                    The AI cannot answer questions about prices, costs, or
+                    vendor payouts.
+                  </p>
+                </section>
+              </div>
+
+              <div
+                style={{
+                  padding: '13px 20px',
+                  borderTop: '1px solid #f1f5f9',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  background: '#fafafa',
+                }}
+              >
+                <button
+                  onClick={() => setShowInstructions(false)}
+                  style={{
+                    padding: '9px 20px',
+                    borderRadius: 10,
+                    background: '#2563eb',
+                    border: 'none',
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'Inter, sans-serif',
+                    boxShadow: '0 2px 8px rgba(37,99,235,0.3)',
+                    transition: 'all 0.13s',
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = '#1d4ed8')
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = '#2563eb')
+                  }
+                >
+                  Got it
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   )
 }
